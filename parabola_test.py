@@ -1,27 +1,10 @@
-import time
 from matplotlib import pyplot
-from numpy import arange
-from math import pi, e, sqrt
+import numpy
 
 start = 0
-end = 15#5 * 60  # 5 mins in seconds.
-peak = 10  # Per second.
-
-
-def get_parab(x, y, xint1, xint2):
-    return lambda real_x: (y / ((x - xint1) * (x - xint2))) * (real_x - xint1) * (real_x - xint2)
-
-def get_gauss(a, b, c):
-    return lambda x: a*e**-(((x-b)**2)/2*c**2)
-
-def get_dist_gauss(expected_val, variance):
-    """
-    Distribution style gauss function.
-    :param expected_val: the "u" in the formula's.
-    :param variance: the "o" in the formula's.
-    :return: Function.
-    """
-    return lambda x: (1/(variance*sqrt(2*pi))) * e ** (-(1/2)*((x-expected_val)/variance)**2)
+end = 15    #5 * 60  # 5 mins in seconds.
+spin_up = 0.30  # Percentage.
+peak = 3  # Concurrent Requests.
 
 
 def get_built_func(start, acceleration_space, max_height, peak_duration):
@@ -36,29 +19,56 @@ def get_built_func(start, acceleration_space, max_height, peak_duration):
     :param peak_duration: Time at peak.
     :return: Function that given an x, returns what height it should be at.
     """
-    # TODO: Make acceleration/deceleration smoother.
     def func(x):
         # Out of range.
-        if x < start or x > acceleration_space + peak_duration + acceleration_space:
+        if x < start or x > start + acceleration_space + peak_duration + acceleration_space:
             return 0
         # Up tick.
-        elif x < start + 0.5*(2*start + acceleration_space):
-            return (x-start)**2
+        elif x < start + 0.5*acceleration_space:
+            # vertex
+            vertex_x = start
+            vertex_y = 0
+            # point
+            point_x = start + (acceleration_space/2)
+            point_y = max_height / 2
+            return parabola_constructor(vertex_x, vertex_y, point_x, point_y)(x)
         # Curve to flat
         elif x < start + acceleration_space:
-            return -(x-(start + acceleration_space))**2 + max_height
+            # vertex
+            vertex_x = start + acceleration_space
+            vertex_y = max_height
+            # point
+            point_x = start + (acceleration_space / 2)
+            point_y = max_height / 2
+            return parabola_constructor(vertex_x, vertex_y, point_x, point_y)(x)
         # Steady peak.
         elif x < start + acceleration_space + peak_duration:
             return max_height
         # Curve down
-        elif x < start + acceleration_space + peak_duration + 0.5*(2*start + acceleration_space):
-            return -(x-(start + acceleration_space + peak_duration))**2 + max_height
+        elif x < start + acceleration_space + peak_duration + 0.5*acceleration_space:
+            # vertex
+            vertex_x = start + acceleration_space + peak_duration
+            vertex_y = max_height
+            # point
+            point_x = start + acceleration_space + peak_duration + (acceleration_space / 2)
+            point_y = max_height / 2
+            return parabola_constructor(vertex_x, vertex_y, point_x, point_y)(x)
         # Back to flat
         else:
-            return (x-(start + acceleration_space + peak_duration + acceleration_space))**2
+            # vertex
+            vertex_x = start + acceleration_space + peak_duration + acceleration_space
+            vertex_y = 0
+            # point
+            point_x = start + acceleration_space + peak_duration + (acceleration_space / 2)
+            point_y = max_height / 2
+            return parabola_constructor(vertex_x, vertex_y, point_x, point_y)(x)
 
     return func
 
+
+def parabola_constructor(peak_x, peak_y, ax, ay):
+    a = (ay-peak_y)/(ax-peak_x)**2
+    return lambda x: a*((x-peak_x)**2) + peak_y
 
 """
 when x=end/2, y=peak    <- Maximum.
@@ -66,14 +76,20 @@ when x=start, y=0   <- y intercept.
 when x=end, y=0     <- x intercepts.
 """
 
-#equation = get_parab((end - start) / 2, peak, start, end)
-#equation = get_gauss(peak, (start + end)/2, 0.1)
-#equation = get_dist_gauss(0, i)
-equation = get_built_func(0, 2, 4, 6)
+accel_time = (end-start)*spin_up
+duration = end-start-2*accel_time
+equation = get_built_func(start, accel_time, peak, duration)
 
+spacer = 0.01
 plot_arr = []
-for j in arange(start, end, 0.1):
+for j in numpy.arange(start, end, spacer):
     plot_arr.append(equation(j))
 
-pyplot.plot(list(arange(start, end, 0.1)), plot_arr)
+fig = pyplot.figure()
+ax = fig.gca()
+ax.set_xticks(numpy.arange(start, end+end/10, (end-start)/10))
+ax.set_yticks(numpy.arange(0, peak+peak/10, peak/10))
+pyplot.plot(list(numpy.arange(start, end, spacer)), plot_arr, "-bD",
+            markevery=[0, -1, round((start+accel_time)/spacer), round((start+accel_time+duration)//spacer)])
+pyplot.grid()
 pyplot.show()
