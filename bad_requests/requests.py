@@ -1,7 +1,7 @@
-import socket
+import urllib.parse
+from bad_requests.request import Request
 
-port_options = [80, 443, 8080]
-buffersize = 1024
+# Kinda Firefox.
 standard_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0",
     "Accept-Language": "en,en-US",
@@ -10,28 +10,51 @@ standard_headers = {
 }
 
 
-class Response:
-    def __init__(self, status_code, status_message, proto, headers, body):
-        self.status_code = status_code
-        self.status_message = status_message
-        self.proto = proto
-        self.headers = headers
-        self.body = body
+def get(uri, args=None, headers=None):
+    host, resource = parse_uri(uri)
 
-    def __str__(self):
-        str_headers = "\n".join([": ".join([key, val]) for key, val in self.headers.items()])
-        return "Proto: {}\nCode: {}\nMessage: {}\nHeaders: \"\n{}\"\n\nBody: \"\n{}\"".format(
-            self.proto, self.status_code, self.status_message, str_headers, self.body)
+    if headers is None:
+        headers = standard_headers
+    header_str = serialize_headers(headers)
 
-def get(uri, headers=None):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    args_str = url_encode_dict(args)
+    if args_str:
+        resource += "?" + args_str
+    message = "GET {} HTTP/1.1\nHost: {}\n{}\n\n".format(resource, host, header_str)
+    return Request(host, message)
 
-    if uri[-1] == "/":
-        # Strip.
-        url = uri
-        uri = uri[:-1]
-    else:
-        url = uri
+
+def head(uri, args=None, headers=None):
+    host, resource = parse_uri(uri)
+
+    if headers is None:
+        headers = standard_headers
+    header_str = serialize_headers(headers)
+
+    args_str = url_encode_dict(args)
+    if args_str:
+        resource += "?" + args_str
+
+    message = "HEAD {} HTTP/1.1\nHost: {}\n{}\n\n".format(resource, host, header_str)
+    return Request(host, message, get_body=False)
+
+
+def post(uri, args=None, headers=None, content_type=None, boundary=None):
+    host, resource = parse_uri(uri)
+
+    if content_type is None:
+        if "Content-Type" in headers:
+            if headers['Content-Type'] == "application/x-www-form-urlencoded":
+                content_type = "application/x-www-form-urlencoded"
+            elif "multipart/form-data" in headers['Content-Type'] and :
+                pass
+            pass
+
+
+    raise Exception("NOT IMPLEMENTED")
+
+
+def parse_uri(uri):
     resource = uri.split("/")
     # ['http:', '', 'www.example.com', 'what_we_want.html']
     host = resource[2]
@@ -39,77 +62,37 @@ def get(uri, headers=None):
         resource = "/".join(resource)
     else:
         resource = "/" + "/".join(resource[3:])
+    return host, resource
 
+
+def serialize_headers(headers):
     # Join headers.
-    if headers is None:
-        headers = standard_headers
     header_str = ""
     for key, val in headers.items():
         header_str += key + ": " + val + "\n"
+    return header_str
 
-    message = "GET {} HTTP/1.1\nHost: {}\n{}\r\n\r\n".format(resource, host, header_str)
 
-    # Connect and send message.
-    worked = False
-    for port in port_options:
-        try:
-            sock.connect((host, port))
-            worked = True
-        except socket.error as e:
-            print(e)
-            print("Failed on port: " + str(port))
-            raise e
-        finally:
-            if worked:
-                break
-    if not worked:
-        print("Failed all ports.")
-        return None
-
-    # Send message.
-    sock.send(message.encode("UTF-8"))
-
-    # Get headers
-    headers = ""
-    received = sock.recv(buffersize)
-    while len(received) == buffersize:
-        headers += received.decode("UTF-8")
-        received = sock.recv(buffersize)
-    headers += received.decode("UTF-8")
-
-    # Parse headers.
-    lines = headers.split("\n")
-    status = lines[0].split(" ")
-    proto = status[0]
-    status_code = status[1]
-    status_message = status[2]
-    dict_headers = {}
-    for line in lines[1:]:        # Skip HTTP/1.1 200 OK line.
-        if len(line) <= 1:
-            continue
-        data = line.split(": ", 1)
-        key = data[0]
-        vals = data[1].strip()
-        dict_headers[key] = vals
-
-    if "Content-Length" in dict_headers:
-        total_body = int(dict_headers["Content-Length"])
+def url_encode_dict(args):
+    if args is not None and isinstance(args, dict):
+        all_args = []
+        for k, v in args.items():
+            print(k, v)
+            cur_k = urllib.parse.quote(k)
+            cur_v = urllib.parse.quote(v)
+            all_args.append(cur_k + "=" + cur_v)
+        return "&".join(all_args)
     else:
-        total_body = None
-
-    # Get body.
-    body = ""
-    received = sock.recv(buffersize)
-    total_received = len(received)
-    while total_received < total_body if total_body is not None else len(received) >= buffersize:
-        body += received.decode("UTF-8")
-        received = sock.recv(buffersize)
-        total_received += len(received)
-    body += received.decode("UTF-8")
-
-    return Response(status_code, status_message, proto, dict_headers, body)
+        return None
 
 
 if __name__ == "__main__":
-    response = get("http://www.theuselessweb.com")
-    print(response)
+    test_url = "http://www.theuselessweb.com"
+
+    resp_head = head(test_url)
+    print(resp_head)
+
+    req_get = get(test_url, args={"hello": "world"})
+    print(req_get)
+    resp_get = req_get.send()
+    print(resp_get)
