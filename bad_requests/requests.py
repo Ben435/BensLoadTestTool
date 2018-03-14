@@ -1,12 +1,13 @@
 import socket
+import ssl
 
 port_options = [80, 443, 8080]
 buffersize = 1024
 standard_headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0",
     "Accept-Language": "en,en-US",
-    "Accept": "text/html,application/xhtml+xml",
-    "Accept-Encoding": 'deflate'
+    "Accept": "text/html,application/xhtml+xml,application/xml",
+    "Accept-Encoding": 'gzip,deflate,br'
 }
 
 
@@ -23,15 +24,13 @@ class Response:
         return "Proto: {}\nCode: {}\nMessage: {}\nHeaders: \"\n{}\"\n\nBody: \"\n{}\"".format(
             self.proto, self.status_code, self.status_message, str_headers, self.body)
 
+
 def get(uri, headers=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     if uri[-1] == "/":
         # Strip.
-        url = uri
         uri = uri[:-1]
-    else:
-        url = uri
     resource = uri.split("/")
     # ['http:', '', 'www.example.com', 'what_we_want.html']
     host = resource[2]
@@ -39,6 +38,13 @@ def get(uri, headers=None):
         resource = "/".join(resource)
     else:
         resource = "/" + "/".join(resource[3:])
+    # Enable SSL if needed.
+    print(uri)
+    if "https" in resource[0].lower():
+        sock = ssl.wrap_socket(sock)
+        proto = "HTTPS"
+    else:
+        proto = "HTTP"
 
     # Join headers.
     if headers is None:
@@ -47,7 +53,8 @@ def get(uri, headers=None):
     for key, val in headers.items():
         header_str += key + ": " + val + "\n"
 
-    message = "GET {} HTTP/1.1\nHost: {}\n{}\r\n\r\n".format(resource, host, header_str)
+    message = "GET {} {}/1.1\nHost: {}\n{}\r\n\r\n".format(resource, proto, host, header_str)
+    print(message)
 
     # Connect and send message.
     worked = False
@@ -71,14 +78,20 @@ def get(uri, headers=None):
 
     # Get headers
     headers = ""
+    body = ""
     received = sock.recv(buffersize)
-    while len(received) == buffersize:
+    while len(received) == buffersize and "\r\n\r\n" not in received.decode("UTF-8"):
         headers += received.decode("UTF-8")
         received = sock.recv(buffersize)
-    headers += received.decode("UTF-8")
+    snip = received.decode("UTF-8").split("\r\n\r\n")
+    if len(snip) >= 2:
+        headers += snip[0]
+        body += "\r\n\r\n".join(snip[1:])
+    else:
+        headers += "\r\n\r\n".join(snip)
 
     # Parse headers.
-    lines = headers.split("\n")
+    lines = headers.split("\r\n")
     status = lines[0].split(" ")
     proto = status[0]
     status_code = status[1]
@@ -98,9 +111,7 @@ def get(uri, headers=None):
         total_body = None
 
     # Get body.
-    body = ""
-    received = sock.recv(buffersize)
-    total_received = len(received)
+    total_received = len(body)
     while total_received < total_body if total_body is not None else len(received) >= buffersize:
         body += received.decode("UTF-8")
         received = sock.recv(buffersize)
@@ -111,5 +122,7 @@ def get(uri, headers=None):
 
 
 if __name__ == "__main__":
-    response = get("http://www.theuselessweb.com")
+    #response = get("http://www.theuselessweb.com")
+    #response = get("https://monplan.apps.monash.edu/")
+    response = get("https://en.wikipedia.org/wiki/Gzip")
     print(response)

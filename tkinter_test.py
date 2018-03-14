@@ -11,6 +11,7 @@ import time
 import requests
 import threading
 import multiprocessing
+from bad_requests import requests as breqs
 
 LARGE_FONT = ("Verdana", 12)
 style.use("ggplot")
@@ -18,7 +19,7 @@ style.use("ggplot")
 f = Figure(figsize=(5, 5), dpi=100)
 a = f.add_subplot(111)
 
-duration = 300
+duration = 60
 rate = 80
 runs = 0
 
@@ -27,8 +28,8 @@ work_queue = multiprocessing.JoinableQueue()
 time_queue = multiprocessing.Queue()
 # url = "https://swapme.apps.monash.edu"
 # url = "https://monash-swapme-dev.appspot.com"
-# url = "https://monplan.apps.monash.edu"
-url = "http://monplan-api-dev.appspot.com/units/FIT3047"
+url = "https://monplan.apps.monash.edu"
+#url = "http://monplan-api-dev.appspot.com/units/FIT3047"
 
 
 def animate(i):
@@ -69,7 +70,8 @@ def send_over_time(per_sec, duration, w_queue, t_queue, headers=None, args=None)
                 break
             s = time.time()
             try:
-                response = requests.get(url, args, headers=headers)
+                #response = requests.get(url, args, headers=headers)
+                response = breqs.get(url, headers=headers)
                 if response.status_code != 200:
                     print("?", end='', flush=True)
             except ConnectionError:
