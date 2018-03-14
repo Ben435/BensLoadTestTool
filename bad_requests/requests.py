@@ -1,38 +1,78 @@
-import socket
-import ssl
+from bad_requests.request import Request
 
-port_options = [80, 443, 8080]
-buffersize = 1024
-standard_headers = {
+STANDARD_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:58.0) Gecko/20100101 Firefox/58.0",
     "Accept-Language": "en,en-US",
     "Accept": "text/html,application/xhtml+xml",
     "Accept-Encoding": 'deflate'
 }
 
+DEFAULT_BOUNDARY = "=="
 
-class Response:
-    def __init__(self, status_code, status_message, proto, headers, body):
-        self.status_code = status_code
-        self.status_message = status_message
-        self.proto = proto
-        self.headers = headers
-        self.body = body
 
-    def __str__(self):
-        str_headers = "\n".join([": ".join([key, val]) for key, val in self.headers.items()])
-        return "Proto: {}\nCode: {}\nMessage: {}\nHeaders: \"\n{}\"\n\nBody: \"\n{}\"".format(
-            self.proto, self.status_code, self.status_message, str_headers, self.body)
+def get(uri, args=None, headers=None):
+    host, resource = parse_uri(uri)
 
-def get(uri, headers=None):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if headers is None:
+        headers = STANDARD_HEADERS
+    header_str = serialize_headers(headers)
 
-    if uri[-1] == "/":
-        # Strip.
-        url = uri
-        uri = uri[:-1]
+    args_str = url_encode_dict(args)
+    if args_str:
+        resource += "?" + args_str
+    message = "GET {} HTTP/1.1\nHost: {}\n{}\n\n".format(resource, host, header_str)
+    return Request(host, message)
+
+
+def head(uri, args=None, headers=None):
+    host, resource = parse_uri(uri)
+
+    if headers is None:
+        headers = STANDARD_HEADERS
+    header_str = serialize_headers(headers)
+
+    args_str = url_encode_dict(args)
+    if args_str:
+        resource += "?" + args_str
+
+    message = "HEAD {} HTTP/1.1\nHost: {}\n{}\n\n".format(resource, host, header_str)
+    return Request(host, message, get_body=False)
+
+
+def post(uri, args=None, headers=None):
+    host, resource = parse_uri(uri)
+
+    if "Content-Type" in headers:
+        if headers['Content-Type'] == "application/x-www-form-urlencoded":
+            return urlencoded_post(host, resource, args=args, headers=headers)
+        elif "multipart/form-data" in headers['Content-Type']:
+            parts = headers['Content-Type'].split(";")
+            if len(parts) >= 2:
+                boundary_parts = parts[1].strip().split("=")
+                if boundary_parts[0].lower() == "boundary":
+                    boundary = boundary_parts[1]
+                else:
+                    # Default boundary.
+                    boundary = DEFAULT_BOUNDARY
+                return multipart_post(host, resource, boundary, args=args, headers=headers)
+            else:
+                return multipart_post(host, resource, DEFAULT_BOUNDARY, args=args, headers=headers)
+        else:
+            raise Exception("Invalid Content-Type: {}".format(headers['Content-Type']))
     else:
-        url = uri
+        # Default.
+        return urlencoded_post(host, resource, args=args, headers=headers)
+
+
+def urlencoded_post(host, resource, args=None, headers=None):
+    pass
+
+
+def multipart_post(host, resource, boundary, args=None, headers=None):
+    pass
+
+
+def parse_uri(uri):
     resource = uri.split("/")
     # ['http:', '', 'www.example.com', 'what_we_want.html']
     host = resource[2]
@@ -40,89 +80,66 @@ def get(uri, headers=None):
         resource = "/".join(resource)
     else:
         resource = "/" + "/".join(resource[3:])
+    return host, resource
 
-    # Enable SSL if needed.
-    print(uri)
-    if "https" in resource[0].lower():
-        sock = ssl.wrap_socket(sock)
-        proto = "HTTPS"
-    else:
-        proto = "HTTP"
 
+def serialize_headers(headers):
     # Join headers.
-    if headers is None:
-        headers = standard_headers
     header_str = ""
     for key, val in headers.items():
         header_str += key + ": " + val + "\n"
+    return header_str
 
-    message = "GET {} {}/1.1\nHost: {}\n{}\r\n\r\n".format(resource, proto, host, header_str)
 
-    # Connect and send message.
-    worked = False
-    for port in port_options:
-        try:
-            sock.connect((host, port))
-            worked = True
-        except socket.error as e:
-            print(e)
-            print("Failed on port: " + str(port))
-            raise e
-        finally:
-            if worked:
-                break
-    if not worked:
-        print("Failed all ports.")
+def url_encode_dict(args):
+    if args is not None and isinstance(args, dict):
+        all_args = []
+        for k, v in args.items():
+            cur_k = percent_encode_string(k)
+            cur_v = percent_encode_string(v)
+            all_args.append(cur_k + "=" + cur_v)
+        return "&".join(all_args)
+    else:
         return None
 
-    # Send message.
-    sock.send(message.encode("UTF-8"))
 
-    # Get headers
-    headers = ""
-    body = ""
-    received = sock.recv(buffersize)
-    while len(received) == buffersize and "\r\n\r\n" not in received.decode("UTF-8"):
-        headers += received.decode("UTF-8")
-        received = sock.recv(buffersize)
-    snip = received.decode("UTF-8").split("\r\n\r\n")
-    if len(snip) >= 2:
-        headers += snip[0]
-        body += "\r\n\r\n".join(snip[1:])
-    else:
-        headers += "\r\n\r\n".join(snip)
+def percent_encode_string(string):
+    safe_chars = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
+    end_str = ""
+    for char in string:
+        if char not in safe_chars:
+            num = ord(char)
+            print(num, hex(num), len(str(hex(num)).split("x")[-1])*8)
 
-    # Parse headers.
-    lines = headers.split("\r\n")
-    status = lines[0].split(" ")
-    proto = status[0]
-    status_code = status[1]
-    status_message = status[2]
-    dict_headers = {}
-    for line in lines[1:]:        # Skip HTTP/1.1 200 OK line.
-        if len(line) <= 1:
-            continue
-        data = line.split(": ", 1)
-        key = data[0]
-        vals = data[1].strip()
-        dict_headers[key] = vals
+            if num <= 255:
+                end_str += "%" + str(hex(num).split("x")[-1]).upper()
+            else:
+                tmp = str(hex(num).split("x")[-1]).upper()
+                if len(tmp) % 2 == 1:
+                    tmp = "0" + tmp
+                for i in range(2, len(tmp)+1, 2):
+                    end_str += "%" + tmp[i-2:i]
+        else:
+            end_str += char
 
-    if "Content-Length" in dict_headers:
-        total_body = int(dict_headers["Content-Length"])
-    else:
-        total_body = 0
+    return end_str
 
-    # Get body.
-    total_received = len(body)
-    while total_received < total_body:
-        body += received.decode("UTF-8")
-        received = sock.recv(buffersize)
-        total_received += len(received)
-    body += received.decode("UTF-8")
-
-    return Response(status_code, status_message, proto, dict_headers, body)
 
 
 if __name__ == "__main__":
-    response = get("http://www.theuselessweb.com")
-    print(response)
+    #test.
+    import urllib.parse
+    test_str = "♥"
+    print(test_str)
+    print(urllib.parse.quote(test_str))
+    print(percent_encode_string(test_str))
+
+    # test_url = "http://www.theuselessweb.com"
+    #
+    # resp_head = head(test_url)
+    # print(resp_head)
+    #
+    # req_get = get(test_url, args={"hello": "world"})
+    # print(req_get)
+    # resp_get = req_get.send()
+    # print(resp_get)
