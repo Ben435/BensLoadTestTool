@@ -49,10 +49,10 @@ class Request:
         # Get headers
         headers = ""
         body = ""
-        received = sock.recv(buffersize)
-        while len(received) == buffersize and "\r\n\r\n" not in received.decode("UTF-8"):
+        received = sock.recv(BUFFERSIZE)
+        while len(received) == BUFFERSIZE and "\r\n\r\n" not in received.decode("UTF-8"):
             headers += received.decode("UTF-8")
-            received = sock.recv(buffersize)
+            received = sock.recv(BUFFERSIZE)
         snip = received.decode("UTF-8").split("\r\n\r\n")
         if len(snip) >= 2:
             headers += snip[0]
@@ -84,7 +84,7 @@ class Request:
         total_received = len(body)
         while total_received < total_body:
             body += received.decode("UTF-8")
-            received = sock.recv(buffersize)
+            received = sock.recv(BUFFERSIZE)
             total_received += len(received)
         body += received.decode("UTF-8")
 
