@@ -16,6 +16,7 @@ class Request:
 
     def send(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
 
         resource = self.host.split("/")
 
